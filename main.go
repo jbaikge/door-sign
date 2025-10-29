@@ -2,8 +2,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
+	"flag"
+	"fmt"
 	"log/slog"
+	"net/http"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -12,6 +16,19 @@ import (
 const MessagePattern = `Process (?P<process>\w+)\.(?P<pid>\d+) (?P<action>\w+) (?P<assertion>\w+) "(?P<description>[^"]+)"`
 
 const Assertion = "NoDisplaySleepAssertion"
+
+var (
+	ApiUrl   = "https://home.baconvacation.com/api"
+	EntityId = "switch.mini_plug_16263"
+	Token    = ""
+)
+
+type SwitchState string
+
+const (
+	SwitchOn  SwitchState = "on"
+	SwitchOff SwitchState = "off"
+)
 
 type Match struct {
 	Process     string
@@ -55,17 +72,60 @@ type Event struct {
 	Message string `json:"eventMessage"`
 }
 
+type Entity struct {
+	EntityId string `json:"entity_id"`
+}
+
+func homeAssistantToggle(state SwitchState) (err error) {
+	url := fmt.Sprintf("%s/services/switch/turn_%s", ApiUrl, state)
+
+	payload := Entity{
+		EntityId: EntityId,
+	}
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(payload); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, &buf)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", Token))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to turn on sign, status code: %d", resp.StatusCode)
+	}
+
+	return
+}
 func turnOnSign() (err error) {
+	if err = homeAssistantToggle(SwitchOn); err != nil {
+		return err
+	}
+
 	slog.Info("Sign turned ON")
 	return
 }
 
 func turnOffSign() (err error) {
+	if err = homeAssistantToggle(SwitchOff); err != nil {
+		return err
+	}
+
 	slog.Info("Sign turned OFF")
 	return
 }
 
-func main() {
+func watchLog() {
 	cmd := exec.Command(
 		"log", "stream",
 		"--process", "powerd",
@@ -136,4 +196,15 @@ func main() {
 			}
 		}
 	}
+}
+
+func main() {
+	flag.StringVar(&ApiUrl, "api-url", ApiUrl, "Home Assistant API URL")
+	flag.StringVar(&EntityId, "entity-id", EntityId, "Home Assistant Entity ID")
+	flag.StringVar(&Token, "token", Token, "Home Assistant Long-Lived Access Token")
+	flag.Parse()
+
+	slog.Info("Starting powerd watcher", "api_url", ApiUrl, "entity_id", EntityId)
+
+	watchLog()
 }
