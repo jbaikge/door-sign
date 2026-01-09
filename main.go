@@ -18,8 +18,8 @@ const MessagePattern = `Process (?P<process>\w+)\.(?P<pid>\d+) (?P<action>\w+) (
 const Assertion = "NoDisplaySleepAssertion"
 
 var (
-	ApiUrl   = "https://home.baconvacation.com/api"
-	EntityId = "switch.mini_plug_16263"
+	ApiUrl   = ""
+	EntityId = ""
 	Token    = ""
 )
 
